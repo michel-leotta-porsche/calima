@@ -14,6 +14,7 @@ import { AUTO, CalimaCamera, FILM_FRAMES, focalZoom, grainOf, isDenied, LUT_N, l
 import { bakePhoto } from "@/lib/develop/bake";
 import { buildLut, neutralEdit, PRESETS, type NamedRecipe, type PhotoEdit } from "@/lib/develop/model";
 import { applySettings, type CopiedSettings } from "@/lib/develop/settings";
+import { EV_TICKS, evLabel, evMode, evStep } from "@/lib/ev";
 import { haptic } from "@/lib/haptics";
 import { SIZES, studioSource } from "@/lib/ingest";
 import { saveToLibrary } from "@/lib/library-save";
@@ -41,7 +42,6 @@ const SHIFT_KEY = "calima:kamera-weiss";
 const TOOLS_KEY = "calima:kamera-werkzeug";
 const HOLD_MS = 220;
 const MOVE_PX = 10;
-const EV_MAX = 2;
 /** Seite des Messquadrats der Weiß-Pipette, Anteil der Sucherbreite */
 const PATCH = 0.18;
 
@@ -55,7 +55,6 @@ const stamp = () => {
 };
 /** so viele Bilder passen auf den Film: eine Einwegkamera bringt ihre eigene Zahl mit */
 const framesOf = (f: Film) => f.rules?.frames ?? FILM_FRAMES;
-const evLabel = (ev: number) => `${ev > 0 ? "+" : ev < 0 ? "−" : "±"}${Math.abs(ev).toFixed(1)}`;
 
 /** taken: von „So fotografieren“ geöffnet, der eben mitgenommene Look kommt vor dem zuletzt gewählten */
 export function Camera({ uid, taken, onShot, onFilmDone, onClose }: { uid: string; taken?: boolean; onShot: (p: Print, stack?: string) => void; onFilmDone: (stack: string) => void; onClose: () => void }) {
@@ -477,9 +476,11 @@ export function Camera({ uid, taken, onShot, onFilmDone, onClose }: { uid: strin
       if (!fixed) setShowEv(true);
     }
     if (g.mode === "drag") {
-      const next = Math.round(Math.min(EV_MAX, Math.max(-EV_MAX, g.ev0 - dy / 120)) * 10) / 10;
-      if (next !== ev) {
+      // Zeit und ISO von Hand: es gibt nichts nachzuregeln, der Sucher sagt das statt still nichts zu tun (#224)
+      const next = evStep(g.ev0 - dy / 120);
+      if (evMode(dials) !== "manual" && next !== ev) {
         setEv(next);
+        haptic("select");
         later(() => CalimaCamera.setExposure({ ev: next }).catch(() => {}));
       }
     }
@@ -767,11 +768,22 @@ export function Camera({ uid, taken, onShot, onFilmDone, onClose }: { uid: strin
               )}
             </span>
           )}
-          {showEv && (
-            <span aria-hidden className="bg-table-deep/70 text-on-table absolute top-3 right-3 rounded-full px-2.5 py-1 text-[13px] font-semibold tabular-nums">
-              {evLabel(ev)}
-            </span>
-          )}
+          {showEv &&
+            (evMode(dials) === "manual" ? (
+              <p role="status" className="bg-table-deep/80 text-on-table absolute inset-x-6 top-3 rounded-2xl px-3 py-2 text-center text-[13px] leading-snug">
+                {t("Zeit und ISO stehen von Hand. Für Heller/Dunkler stell eins der beiden Räder auf A.")}
+              </p>
+            ) : (
+              // Skala in Dritteln: man sieht, wie weit man gewischt hat, auch wenn das Bild sich nur wenig ändert
+              <span aria-hidden className="bg-table-deep/70 text-on-table absolute top-3 right-3 flex items-center gap-2 rounded-full py-1 pr-2.5 pl-2 text-[13px] font-semibold tabular-nums">
+                <span className="relative flex h-3 items-center gap-[3px]">
+                  {EV_TICKS.map((v) => (
+                    <i key={v} className={`block w-px ${Number.isInteger(v) ? "h-3" : "h-1.5"} ${Math.abs(v - ev) < 0.01 ? "bg-cloth" : "bg-on-table-2/60"}`} />
+                  ))}
+                </span>
+                <span className="min-w-8 text-right">{evLabel(ev)}</span>
+              </span>
+            ))}
         </div>
       </div>
 
