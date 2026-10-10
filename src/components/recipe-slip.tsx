@@ -486,11 +486,11 @@ async function currentUid(): Promise<string | null> {
 
 /**
  * Calimas Kamera über dem Buch. Die Aufnahmen landen wie aus dem Zimmer auf dem Gerät (Abendstapel): ohne Film auf dem
- * Stapel ihres Tages, auf einem Film im Film. Ein Hinweis sagt, wo sie liegen, und das Buch bleibt, wie es war.
+ * Stapel ihres Tages, auf einem Film im Film (entwickelt als Umschlag). Ein Hinweis sagt, wo sie liegen, und das Buch bleibt, wie es war.
  */
 function SlipCamera({ uid, onClose }: { uid: string; onClose: () => void }) {
   const t = useT();
-  const made = useRef({ shots: new Set<string>(), films: new Set<string>(), developed: new Set<string>() });
+  const made = useRef({ shots: new Set<string>(), films: new Set<string>(), developed: [] as string[] });
   const onShot = (p: Print, filmStack?: string) => {
     // auf einem Film zählt die Kamera selbst, der Stapel ist der Film
     if (filmStack) {
@@ -504,15 +504,16 @@ function SlipCamera({ uid, onClose }: { uid: string; onClose: () => void }) {
   const close = () => {
     const { shots, films, developed } = made.current;
     onClose();
-    if (developed.size) notify(t("Entwickelt. Die Bilder liegen auf dem Stapel ihres Tages."));
+    if (developed.length === 1) notify(t("Entwickelt. Der Umschlag „{name}“ liegt im Fotostudio.", { name: developed[0] }));
+    else if (developed.length) notify(t("Entwickelt. Die {n} Umschläge liegen im Fotostudio.", { n: developed.length }));
     else if (shots.size) notify(shots.size === 1 ? t("Das Foto liegt auf dem Stapel von heute.") : t("Die {n} Fotos liegen auf dem Stapel von heute.", { n: shots.size }));
     else if (films.size) notify(t("Der Film liegt im Fotostudio."));
   };
-  // ein entwickelter Film kommt wie im Zimmer auf den Abendstapel
-  const onFilmDone = (stack: string) => {
+  // ein entwickelter Film kommt wie im Zimmer als Umschlag auf den Pult (#244)
+  const onFilmDone = (stack: string, name: string) => {
     made.current.films.delete(stack);
-    made.current.developed.add(stack);
-    developFilm(uid, stack).catch(() => {});
+    made.current.developed.push(name);
+    developFilm(uid, stack, name).catch(() => {});
   };
   return <CameraView uid={uid} taken onShot={onShot} onFilmDone={onFilmDone} onClose={close} />;
 }

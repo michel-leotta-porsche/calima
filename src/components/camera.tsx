@@ -58,7 +58,7 @@ const framesOf = (f: Film) => f.rules?.frames ?? FILM_FRAMES;
 const evLabel = (ev: number) => `${ev > 0 ? "+" : ev < 0 ? "−" : "±"}${Math.abs(ev).toFixed(1)}`;
 
 /** taken: von „So fotografieren“ geöffnet, der eben mitgenommene Look kommt vor dem zuletzt gewählten */
-export function Camera({ uid, taken, onShot, onFilmDone, onClose }: { uid: string; taken?: boolean; onShot: (p: Print, stack?: string) => void; onFilmDone: (stack: string) => void; onClose: () => void }) {
+export function Camera({ uid, taken, onShot, onFilmDone, onClose }: { uid: string; taken?: boolean; onShot: (p: Print, stack?: string) => void; onFilmDone: (stack: string, name: string) => void; onClose: () => void }) {
   const t = useT();
   const recent = useRecentSettings();
   const [own, setOwn] = useState<NamedRecipe[]>([]);
@@ -397,10 +397,10 @@ export function Camera({ uid, taken, onShot, onFilmDone, onClose }: { uid: strin
     haptic("select");
     update((s) => ({ loaded: null, films: film.count ? s.films : s.films.filter((f) => f.stack !== film.stack) }));
   };
-  /** Film entwickeln: erst jetzt werden die Bilder sichtbar, auf dem Abendstapel ihres Tages */
+  /** Film entwickeln: erst jetzt werden die Bilder sichtbar, als Umschlag vorn auf dem Pult (#244) */
   const develop = (f: Film) => {
     update((s) => ({ loaded: null, films: s.films.filter((x) => x.stack !== f.stack) }));
-    if (f.count) onFilmDone(f.stack);
+    if (f.count) onFilmDone(f.stack, f.name);
   };
 
   /* ----- Gesten im Sucher: halten (Original), wischen (Licht), zwei Finger (Zoom), tippen (Schärfe) ----- */
