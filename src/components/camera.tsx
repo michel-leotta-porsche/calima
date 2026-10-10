@@ -15,6 +15,7 @@ import { bakePhoto } from "@/lib/develop/bake";
 import { buildLut, neutralEdit, PRESETS, type NamedRecipe, type PhotoEdit } from "@/lib/develop/model";
 import { applySettings, type CopiedSettings } from "@/lib/develop/settings";
 import { haptic } from "@/lib/haptics";
+import { LIVE_KEY, liveFor, MIC_HINT_KEY, micHint, readLive } from "@/lib/live";
 import { SIZES, studioSource } from "@/lib/ingest";
 import { saveToLibrary } from "@/lib/library-save";
 import { useT } from "@/lib/i18n";
@@ -113,6 +114,22 @@ export function Camera({ uid, taken, onShot, onFilmDone, onClose }: { uid: strin
     }
   });
   const [info, setInfo] = useState<CameraInfo | null>(null);
+  // Live Photos (#188): gemerkt je Gerät, Standard aus; nur für die Mediathek
+  const [liveOn, setLiveOn] = useState(() => {
+    try {
+      return readLive(localStorage.getItem(LIVE_KEY));
+    } catch {
+      return false;
+    }
+  });
+  const toggleLive = () => {
+    const on = !liveOn;
+    setLiveOn(on);
+    haptic("select");
+    try {
+      localStorage.setItem(LIVE_KEY, on ? "1" : "0");
+    } catch {}
+  };
   const [dials, setDials] = useState<Dials>(AUTO);
   /** Weiß-Pipette: das Messquadrat steht im Sucher, der Auslöser misst statt aufzunehmen */
   const [pipette, setMetering] = useState(false);
@@ -132,6 +149,12 @@ export function Camera({ uid, taken, onShot, onFilmDone, onClose }: { uid: strin
     fixedRef.current = fixed;
   });
   const tools = toolsOpen && !fixed;
+  // Live (#188) in der Sitzung an- oder ausschalten; das Mikrofon wird erst beim ersten Einschalten erfragt
+  const liveNow = liveFor({ on: liveOn, supported: !!info?.live, film: !!film });
+  useEffect(() => {
+    if (!ready || !info?.live) return;
+    CalimaCamera.setLive({ on: liveNow }).catch(() => {});
+  }, [ready, info?.live, liveNow]);
   /** Reihe unter dem Sucher: Looks oder Einwegkamera-Vorlagen */
   const [tab, setTab] = useState<"looks" | "einweg">("looks");
   const aside = shelf.films.filter((f) => f.stack !== shelf.loaded);
@@ -582,7 +605,22 @@ export function Camera({ uid, taken, onShot, onFilmDone, onClose }: { uid: strin
     setFlash(true);
     window.setTimeout(() => setFlash(false), 140);
     try {
-      const { path } = await CalimaCamera.capture(film?.rules?.flash ? { flash: true } : undefined);
+      const live = liveNow;
+      const shot = await CalimaCamera.capture({ ...(film?.rules?.flash ? { flash: true } : {}), ...(live ? { live: true } : {}) });
+      const { path } = shot;
+      if (live) {
+        let shown = true;
+        try {
+          shown = localStorage.getItem(MIC_HINT_KEY) === "1";
+        } catch {}
+        if (micHint(shot, shown)) {
+          setError(t("Live Photos ohne Ton: Erlaube Calima das Mikrofon in den iPhone-Einstellungen unter Calima → Mikrofon."));
+          window.setTimeout(() => setError(null), 5000);
+          try {
+            localStorage.setItem(MIC_HINT_KEY, "1");
+          } catch {}
+        }
+      }
       const file = await takeShot(path, `${t("Kamera")} ${stamp()}`);
       const s = await studioSource(file);
       const edit = lookNow.edit ?? undefined;
@@ -600,10 +638,14 @@ export function Camera({ uid, taken, onShot, onFilmDone, onClose }: { uid: strin
         }
       } else {
         // zusätzlich in die Mediathek (#210), groß und mit Look; Filme erst beim Entwickeln
-        saveToLibrary([print], () => {
-          setError(t("Ohne Erlaubnis für die Mediathek liegen die Fotos nur in Calima. Erlauben kannst du es in den iPhone-Einstellungen unter Calima → Fotos."));
-          window.setTimeout(() => setError(null), 5000);
-        });
+        saveToLibrary(
+          [print],
+          () => {
+            setError(t("Ohne Erlaubnis für die Mediathek liegen die Fotos nur in Calima. Erlauben kannst du es in den iPhone-Einstellungen unter Calima → Fotos."));
+            window.setTimeout(() => setError(null), 5000);
+          },
+          shot.live ? { [print.id]: shot.live } : {},
+        );
         setCount((n) => n + 1);
         setLast((old) => {
           if (old) URL.revokeObjectURL(old);
@@ -712,6 +754,17 @@ export function Camera({ uid, taken, onShot, onFilmDone, onClose }: { uid: strin
           <span className="text-on-table-2 text-right text-[13px] tabular-nums" aria-label={t("Zoom {factor}", { factor: `${zoom.toFixed(zoom < 1 ? 1 : zoom % 1 ? 1 : 0)}×` })}>
             {zoom.toFixed(zoom < 1 || zoom % 1 ? 1 : 0)}×
           </span>
+          {info?.live && !film && (
+            <button
+              type="button"
+              onClick={toggleLive}
+              aria-pressed={liveOn}
+              aria-label={t("Live Photo")}
+              className={`rounded-full border px-2 py-0.5 text-[11px] font-bold tracking-[0.08em] ${liveOn ? "border-cloth text-cloth" : "border-on-table-2/50 text-on-table-2"}`}
+            >
+              LIVE
+            </button>
+          )}
           <IconButton label={tools ? t("Werkzeug weglegen") : t("Werkzeug")} variant="quiet" onClick={toggleTools} disabled={!!fixed} aria-pressed={tools} className={`${tools || !allAuto(dials) ? "text-cloth" : "text-on-table"} disabled:opacity-30`}>
             <SlidersHorizontal aria-hidden />
           </IconButton>

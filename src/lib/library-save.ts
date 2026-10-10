@@ -36,13 +36,18 @@ async function bakeLarge(p: Print): Promise<Blob> {
   }
 }
 
-/** Fotos in die Mediathek legen; meldet über onDenied, wenn die Berechtigung fehlt (einmal je Gerät) */
-export function saveToLibrary(prints: Print[], onDenied?: () => void): Promise<void> {
+/**
+ * Fotos in die Mediathek legen; meldet über onDenied, wenn die Berechtigung fehlt (einmal je Gerät). videos: je Foto
+ * der bewegte Teil eines Live Photos (#188), das Foto mit Look wird sein Standbild
+ */
+export function saveToLibrary(prints: Print[], onDenied?: () => void, videos: Record<string, string> = {}): Promise<void> {
   const run = async () => {
     for (const p of prints) {
       try {
-        const r = await CalimaCamera.saveToLibrary({ data: await base64(await bakeLarge(p)) });
+        const video = videos[p.id];
+        const r = await CalimaCamera.saveToLibrary({ data: await base64(await bakeLarge(p)), ...(video ? { video } : {}) });
         if (r.denied) {
+          for (const v of Object.values(videos)) CalimaCamera.discard({ path: v }).catch(() => {});
           if (!libraryDenied()) onDenied?.();
           try {
             localStorage.setItem(DENIED_KEY, "1");

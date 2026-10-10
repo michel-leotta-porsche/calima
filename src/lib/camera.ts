@@ -13,7 +13,8 @@ import { de } from "@/lib/i18n";
 export type Frame = { x: number; y: number; w: number; h: number };
 
 /** was die Kamera kann: echte Objektive als Zoomfaktoren zur Hauptkamera, Grenzen für Zeit und ISO */
-export type CameraInfo = { front: boolean; lenses: number[]; limits: { minDuration: number; maxDuration: number; minISO: number; maxISO: number } };
+/** live: das iPhone kann mit dieser Kamera Live Photos (#188) */
+export type CameraInfo = { front: boolean; lenses: number[]; live?: boolean; limits: { minDuration: number; maxDuration: number; minISO: number; maxISO: number } };
 
 /** Die Räder (Expertenmodus E1): null heißt „A“, die Kamera stellt selbst. duration in Sekunden, focus 0 (nah) bis 1 (fern), kelvin als Farbtemperatur,
  *  tint die Tönung dazu (negativ grüner, positiv magenta; gilt nur mit kelvin, setzt das Licht „Neon“). */
@@ -47,10 +48,22 @@ type Plugin = {
   setMagnify(o: { on: boolean }): Promise<void>;
   /** Wasserwaage: die App meldet die Neigung als Ereignis „level“ (data.roll in Grad, 0 = gerade) */
   setLevel(o: { on: boolean }): Promise<void>;
-  /** flash: echter Blitz für dieses Bild (Einwegkamera-Vorlagen); eine App ohne Blitz-Unterstützung löst ohne aus */
-  capture(o?: { flash?: boolean }): Promise<{ path: string }>;
-  /** fertiges Foto (JPEG, Base64) zusätzlich in die Mediathek; denied, wenn „Fotos hinzufügen“ nicht erlaubt ist */
-  saveToLibrary(o: { data: string }): Promise<{ saved: boolean; denied?: boolean }>;
+  /**
+   * Live Photos (#188) vorbereiten: an fügt Mikrofon und Live-Aufnahme in die Sitzung (fragt beim ersten Mal nach dem
+   * Mikrofon), aus nimmt beides wieder heraus. Gilt bis zum nächsten Aufruf oder stop.
+   */
+  setLive(o: { on: boolean }): Promise<void>;
+  /**
+   * flash: echter Blitz für dieses Bild (Einwegkamera-Vorlagen); eine App ohne Blitz-Unterstützung löst ohne aus.
+   * live (#188): zusätzlich den bewegten Teil aufnehmen. Antwort live: Pfad des Videos im Cache (bleibt liegen, bis
+   * saveToLibrary es mitnimmt oder discard es löscht), audio: false, wenn das Mikrofon nicht erlaubt ist (Live ohne Ton)
+   */
+  capture(o?: { flash?: boolean; live?: boolean }): Promise<{ path: string; live?: string; audio?: boolean }>;
+  /**
+   * fertiges Foto (JPEG, Base64) zusätzlich in die Mediathek; denied, wenn „Fotos hinzufügen“ nicht erlaubt ist.
+   * video: Pfad aus capture().live, dann wird das Foto mit Look das Standbild eines Live Photos
+   */
+  saveToLibrary(o: { data: string; video?: string }): Promise<{ saved: boolean; denied?: boolean }>;
   discard(o: { path: string }): Promise<void>;
   /** Körnung live im Sucher: amount wie GRAIN.amount, cell wie GRAIN.cell (Anteil der Bildbreite); 0 schaltet sie ab */
   setGrain(o: { amount: number; cell: number }): Promise<void>;
