@@ -350,6 +350,11 @@ final class CalimaCamera: NSObject, AVCaptureVideoDataOutputSampleBufferDelegate
     private var frameTick = 0
     private var lastMeter: (offset: Float, duration: Double, iso: Float, lens: Float, kelvin: Float)?
     private var motion: CMMotionManager?
+    /// Lage des Telefons aus dem Beschleunigungssensor (wie die Kamera-App): UIDevice.orientation meldet bei
+    /// eingeschalteter Ausrichtungssperre nie quer. upright ist die letzte aufrechte Lage, flach zählt nicht fürs Foto.
+    private var orientMotion: CMMotionManager?
+    private var orientation: UIDeviceOrientation = .unknown
+    private var upright: UIDeviceOrientation = .portrait
     private var lastRoll: Double = .nan
 
     /// was die Kamera kann: Objektive als Zoomfaktoren zur Hauptkamera, Grenzen von Zeit und ISO
@@ -524,7 +529,7 @@ final class CalimaCamera: NSObject, AVCaptureVideoDataOutputSampleBufferDelegate
     }
 
     func start(_ done: @escaping (String?) -> Void) {
-        UIDevice.current.beginGeneratingDeviceOrientationNotifications()
+        startOrientation()
         queue.async {
             do {
                 try self.configure(position: .back)
@@ -544,6 +549,8 @@ final class CalimaCamera: NSObject, AVCaptureVideoDataOutputSampleBufferDelegate
         shutterInteraction = nil
         view?.removeFromSuperview()
         setLevel(on: false)
+        orientMotion?.stopAccelerometerUpdates()
+        orientMotion = nil
         magnify = false
         queue.async {
             self.dials = Dials()
@@ -557,6 +564,47 @@ final class CalimaCamera: NSObject, AVCaptureVideoDataOutputSampleBufferDelegate
         lock.lock()
         latest = nil
         lock.unlock()
+    }
+
+    // MARK: Querformat (#253): das Web dreht Knöpfe mit, die Oberfläche selbst bleibt hochkant
+
+    private func startOrientation() {
+        orientMotion?.stopAccelerometerUpdates()
+        orientation = .unknown
+        let m = CMMotionManager()
+        guard m.isAccelerometerAvailable else {
+            sendOrientation(UIDevice.current.orientation)
+            return
+        }
+        m.accelerometerUpdateInterval = 0.15
+        m.startAccelerometerUpdates(to: .main) { [weak self] data, _ in
+            guard let self, let a = data?.acceleration else { return }
+            // Schwerkraft zeigt nach unten: hochkant y ≈ −1, Oberkante links (landscapeLeft) x ≈ −1, flach z ≈ ∓1.
+            // Ein Abstand von 0,25 zwischen den Achsen verhindert Flattern um die Diagonale.
+            let o: UIDeviceOrientation
+            if abs(a.z) > 0.85 { o = a.z < 0 ? .faceUp : .faceDown }
+            else if abs(a.x) > abs(a.y) + 0.25 { o = a.x < 0 ? .landscapeLeft : .landscapeRight }
+            else if abs(a.y) > abs(a.x) + 0.25 { o = a.y < 0 ? .portrait : .portraitUpsideDown }
+            else { return }
+            if o != self.orientation { self.sendOrientation(o) }
+        }
+        orientMotion = m
+    }
+
+    private func sendOrientation(_ o: UIDeviceOrientation) {
+        orientation = o
+        if o.isPortrait || o.isLandscape { upright = o }
+        let name: String
+        switch o {
+        case .portrait: name = "portrait"
+        case .portraitUpsideDown: name = "portraitUpsideDown"
+        case .landscapeLeft: name = "landscapeLeft"
+        case .landscapeRight: name = "landscapeRight"
+        case .faceUp: name = "faceUp"
+        case .faceDown: name = "faceDown"
+        default: name = "unknown"
+        }
+        onEvent?("orientation", ["orientation": name])
     }
 
     private func device(for position: AVCaptureDevice.Position) -> AVCaptureDevice? {
@@ -972,7 +1020,7 @@ final class CalimaCamera: NSObject, AVCaptureVideoDataOutputSampleBufferDelegate
 
     /// Drehung fürs Foto nach der Lage des Telefons (die Oberfläche selbst bleibt hochkant)
     private func angle() -> CGFloat {
-        switch UIDevice.current.orientation {
+        switch upright {
         case .landscapeLeft: return front ? 180 : 0
         case .landscapeRight: return front ? 0 : 180
         case .portraitUpsideDown: return 270

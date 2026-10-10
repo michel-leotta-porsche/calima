@@ -304,10 +304,12 @@ function LightroomSlip({ recipe, reduce }: { recipe: LightroomRecipe; reduce: bo
   );
 }
 
-const lens = (c: CameraInfo, t: Tr, lang: ReturnType<typeof useLang>) => {
+/** wide: das Foto ist quer (#221); hochkant ist der Normalfall und keine Zeile wert */
+const lens = (c: CameraInfo, t: Tr, lang: ReturnType<typeof useLang>, wide = false) => {
   const time = c.shutter ? (c.shutter >= 1 ? `${c.shutter}s` : `1/${Math.round(1 / c.shutter)}s`) : undefined;
   return [
     [t("Gerät"), c.device],
+    [t("Format"), wide ? t("quer") : undefined],
     [t("Brennweite"), c.focal35 ? t("{mm} mm (KB)", { mm: c.focal35 }) : undefined],
     [t("Blende"), c.aperture ? `f/${c.aperture.toFixed(1)}` : undefined],
     [t("Zeit"), time],
@@ -317,12 +319,12 @@ const lens = (c: CameraInfo, t: Tr, lang: ReturnType<typeof useLang>) => {
   ].filter((r): r is [string, string] => !!r[1]);
 };
 
-function CameraSlip({ camera, reduce }: { camera: CameraInfo; reduce: boolean }) {
+function CameraSlip({ camera, wide, reduce }: { camera: CameraInfo; wide: boolean; reduce: boolean }) {
   const t = useT();
   const lang = useLang();
   return (
     <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1.5 text-[13px]">
-      {lens(camera, t, lang).map(([k, v], i) => (
+      {lens(camera, t, lang, wide).map(([k, v], i) => (
         <div key={k} className="contents">
           <dt className="text-ink-2">{k}</dt>
           <dd className="text-ink">
@@ -570,7 +572,7 @@ export function RecipeSlip({ plate, onClose, side = "right" }: { plate: Plate; o
       {recipe?.kind === "lightroom" && <LightroomSlip recipe={recipe} reduce={reduce} />}
       {recipe?.kind === "calima" && <CalimaSlip recipe={recipe} reduce={reduce} />}
       {recipe && camera && <div className="my-4 border-t border-ink/15" />}
-      {camera && <CameraSlip camera={camera} reduce={reduce} />}
+      {camera && <CameraSlip camera={camera} wide={plate.src.width > plate.src.height} reduce={reduce} />}
       {edit && (recipe || camera) && <div className="my-4 border-t border-ink/15" />}
       {edit && <EditSlip edit={edit} reduce={reduce} />}
       <TakeAlong plate={plate} recipe={recipe} />
