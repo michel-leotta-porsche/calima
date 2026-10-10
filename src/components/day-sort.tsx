@@ -11,6 +11,7 @@ import { Button, IconButton } from "@/components/ui/button";
 import { ListGroup, ListRow } from "@/components/ui/list";
 import { Menu, MenuItem } from "@/components/ui/menu";
 import { dayOf } from "@/lib/day-stack";
+import { envelopeLabel, isEnvelope } from "@/lib/envelope";
 import { bakePhoto } from "@/lib/develop/bake";
 import { outSize } from "@/lib/develop/geo";
 import { buildLut, isNeutral } from "@/lib/develop/model";
@@ -106,8 +107,9 @@ export function DaySort({
   onClose: () => void;
 }) {
   const t = useT();
-  const day = dayOf(stack);
-  const dayLong = day.toLocaleDateString(locale(getLang()), { weekday: "long", day: "numeric", month: "long" });
+  // ein Umschlag (#244) öffnet sich wie ein Tag; Überschrift und Filmseite tragen Filmname und Zeitraum statt des Datums
+  const film = isEnvelope(stack);
+  const dayLong = film ? envelopeLabel(prints, locale(getLang())) : dayOf(stack).toLocaleDateString(locale(getLang()), { weekday: "long", day: "numeric", month: "long" });
   const open = prints.filter((p) => !p.pick);
   const current = open[0];
   const next = open[1];
@@ -177,7 +179,7 @@ export function DaySort({
   }, []);
 
   const finished = !current && !laid;
-  const title = laid ? t("Der Tag liegt im Buch") : finished ? t("Fertig für heute") : dayLong;
+  const title = laid ? (film ? t("Der Film liegt im Buch") : t("Der Tag liegt im Buch")) : finished ? (film ? t("Fertig mit dem Film") : t("Fertig für heute")) : dayLong;
   const sub = adding ?? (laid ? dayLong : finished ? dayLong : t("{i} von {n}", { i: Math.min(done + 1, prints.length), n: prints.length }));
 
   return createPortal(
@@ -634,6 +636,7 @@ function Finish({
   return (
     <Scroll>
       <Story
+        film={isEnvelope(stack)}
         value={story}
         disabled={busy !== null}
         onChange={(v) => {
@@ -741,12 +744,12 @@ function Finish({
 }
 
 /** „Wie war der Tag?“: einmal für den ganzen Tag, von Hand auf die Tagesseite; leer lassen ist in Ordnung */
-function Story({ value, disabled, onChange }: { value: string; disabled: boolean; onChange: (v: string) => void }) {
+function Story({ film, value, disabled, onChange }: { film: boolean; value: string; disabled: boolean; onChange: (v: string) => void }) {
   const t = useT();
   return (
     <div className="note-paper deal w-full rotate-[-0.6deg] px-4 pt-3 pb-2.5">
       <label className="text-ink-2 block text-[13px] font-semibold" htmlFor="tages-text">
-        {t("Wie war der Tag?")}
+        {film ? t("Was ist auf dem Film?") : t("Wie war der Tag?")}
       </label>
       <textarea
         id="tages-text"

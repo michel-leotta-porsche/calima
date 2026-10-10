@@ -17,6 +17,7 @@ import { cleanEdit, describeEdit, isNeutral, neutralEdit, type PhotoEdit } from 
 import { applySettings, asLook, fromEdit, fromRecipe, type CopiedSettings } from "@/lib/develop/settings";
 import { de, locale, useLang, useT } from "@/lib/i18n";
 import { copySettings } from "@/lib/settings-clipboard";
+import type { Film } from "@/lib/film";
 import { developFilm, putPrints, type Print } from "@/lib/studio-store";
 import { parseXmp, type LightroomSettings } from "@/lib/xmp";
 
@@ -486,11 +487,11 @@ async function currentUid(): Promise<string | null> {
 
 /**
  * Calimas Kamera über dem Buch. Die Aufnahmen landen wie aus dem Zimmer auf dem Gerät (Abendstapel): ohne Film auf dem
- * Stapel ihres Tages, auf einem Film im Film. Ein Hinweis sagt, wo sie liegen, und das Buch bleibt, wie es war.
+ * Stapel ihres Tages, auf einem Film im Film (entwickelt als Umschlag). Ein Hinweis sagt, wo sie liegen, und das Buch bleibt, wie es war.
  */
 function SlipCamera({ uid, onClose }: { uid: string; onClose: () => void }) {
   const t = useT();
-  const made = useRef({ shots: new Set<string>(), films: new Set<string>(), developed: new Set<string>() });
+  const made = useRef({ shots: new Set<string>(), films: new Set<string>(), developed: [] as string[] });
   const onShot = (p: Print, filmStack?: string) => {
     // auf einem Film zählt die Kamera selbst, der Stapel ist der Film
     if (filmStack) {
@@ -504,15 +505,18 @@ function SlipCamera({ uid, onClose }: { uid: string; onClose: () => void }) {
   const close = () => {
     const { shots, films, developed } = made.current;
     onClose();
-    if (developed.size) notify(t("Entwickelt. Die Bilder liegen auf dem Stapel ihres Tages."));
+    if (developed.length === 1) notify(t("Entwickelt. Der Umschlag „{name}“ liegt im Fotostudio.", { name: developed[0] }));
+    else if (developed.length) notify(t("Entwickelt. Die {n} Umschläge liegen im Fotostudio.", { n: developed.length }));
     else if (shots.size) notify(shots.size === 1 ? t("Das Foto liegt auf dem Stapel von heute.") : t("Die {n} Fotos liegen auf dem Stapel von heute.", { n: shots.size }));
     else if (films.size) notify(t("Der Film liegt im Fotostudio."));
   };
-  // ein entwickelter Film kommt wie im Zimmer auf den Abendstapel
-  const onFilmDone = (stack: string) => {
-    made.current.films.delete(stack);
-    made.current.developed.add(stack);
-    developFilm(uid, stack).catch(() => {});
+  // ein entwickelter Film kommt wie im Zimmer als Umschlag auf den Pult (#244)
+  const onFilmDone = (films: Film[]) => {
+    for (const f of films) {
+      made.current.films.delete(f.stack);
+      made.current.developed.push(f.name);
+      developFilm(uid, f.stack, f.name).catch(() => {});
+    }
   };
   return <CameraView uid={uid} taken onShot={onShot} onFilmDone={onFilmDone} onClose={close} />;
 }

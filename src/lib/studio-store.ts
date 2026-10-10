@@ -1,7 +1,7 @@
 "use client";
 
-import { dayStack, isDayStack } from "@/lib/day-stack";
 import type { PhotoEdit } from "@/lib/develop/model";
+import { isSortPile, toEnvelope } from "@/lib/envelope";
 import { undevelopedStacks } from "@/lib/film";
 import { t } from "@/lib/i18n";
 import type { PhotoMeta } from "@/lib/ingest";
@@ -39,6 +39,9 @@ export type Print = {
   pickAt?: number;
   /** der Satz zum Foto, wird im Buch sein Titel */
   line?: string;
+  /** Umschlag (#244): Name des Films und wann er entwickelt wurde; frisch Entwickeltes liegt vorn */
+  roll?: string;
+  dev?: number;
   /** Platz des Stapels auf dem Pult, wenn er von Hand umsortiert wurde; neue Stapel ohne Platz liegen vorn */
   rank?: number;
 };
@@ -55,7 +58,7 @@ export function piles(prints: Print[]): Print[][] {
     const k = p.stack ?? p.id;
     by.set(k, [...(by.get(k) ?? []), p]);
   }
-  const at = (pile: Print[]) => Math.max(...pile.map((p) => p.at));
+  const at = (pile: Print[]) => Math.max(...pile.map((p) => p.dev ?? p.at));
   const rank = (pile: Print[]) => Math.min(...pile.map((p) => p.rank ?? Infinity));
   return [...by.values()]
     .map((pile) => pile.sort((a, b) => (a.pos ?? 0) - (b.pos ?? 0)))
@@ -71,7 +74,7 @@ export const KEEP_AWAY = 7 * 864e5;
 
 /**
  * was liegen bleibt: höchstens MAX_PRINTS Stapel und MAX_KEPT Fotos, der neueste Stapel immer ganz.
- * Tagesstapel (Abendstapel) räumt das Studio nicht selbst weg und zählt sie nicht mit: Fotos aus Calimas Kamera
+ * Tagesstapel (Abendstapel) und Umschläge entwickelter Filme räumt das Studio nicht selbst weg und zählt sie nicht mit: Fotos aus Calimas Kamera
  * gibt es nur hier, bis sie im Buch liegen. Nur was dort seit KEEP_AWAY weggelegt ist, geht. Unentwickelte Filme (dark)
  * bleiben ebenso ganz und zählen nicht mit: ihre Bilder gibt es nirgends sonst, und man sieht sie erst nach dem Entwickeln.
  */
@@ -80,7 +83,7 @@ export function trimPiles(all: Print[][], now = Date.now(), dark = undevelopedSt
   let kept = 0;
   let n = 0;
   for (const pile of all) {
-    if (isDayStack(pile[0].stack)) {
+    if (isSortPile(pile[0].stack)) {
       const left = pile.filter((p) => p.pick !== "out" || (p.pickAt ?? now) > now - KEEP_AWAY);
       if (left.length) keep.push(left);
       continue;
@@ -214,27 +217,22 @@ export async function workOf(p: Print): Promise<Blob> {
  */
 export async function putPrints(uid: string, ps: Print[]) {
   // ein Tag auf dem Pult: iOS soll den Speicher bei Platzmangel nicht von selbst leeren
-  if (ps.some((p) => isDayStack(p.stack))) navigator.storage?.persist?.().catch(() => {});
+  if (ps.some((p) => isSortPile(p.stack))) navigator.storage?.persist?.().catch(() => {});
   for (const p of ps) {
     if (p.work) await putWork(p.id, p.work);
     const l = await light(p, uid);
     await run("readwrite", (st) => st.put(l));
   }
-  // Tagesstapel räumt niemand weg, also ändert ein Foto darauf nichts an den anderen: nicht alles neu lesen
-  if (ps.every((p) => isDayStack(p.stack))) return;
+  // Tage und Umschläge räumt niemand weg, also ändert ein Foto darauf nichts an den anderen: nicht alles neu lesen
+  if (ps.every((p) => isSortPile(p.stack))) return;
   for (const old of trimPiles(piles(await listPrints(uid))).drop) await removePrint(old.id);
 }
 
-/**
- * Ein entwickelter Film kommt auf den Abendstapel: jedes Bild auf den Stapel seines Tages, eingereiht nach der
- * Aufnahmezeit. So wird es abends mit den anderen Fotos des Tages einsortiert und nie mit alten Stapeln weggeräumt.
- */
-export const toDayStack = (p: Print): Print => ({ ...p, stack: dayStack(p.at), pos: p.at });
-
-/** einen Film aus der Kamera über dem Buch entwickeln, ohne dass das Studio offen ist */
-export async function developFilm(uid: string, stack: string) {
+/** einen Film aus der Kamera über dem Buch entwickeln, ohne dass das Studio offen ist: er kommt als Umschlag auf den Pult */
+export async function developFilm(uid: string, stack: string, name: string) {
   const roll = (await listPrints(uid)).filter((p) => p.stack === stack);
-  if (roll.length) await putPrints(uid, roll.map(toDayStack));
+  if (roll.length) await putPrints(uid, toEnvelope(roll, stack, name, Date.now()));
+  return roll.length;
 }
 
 export async function removePrint(id: string) {

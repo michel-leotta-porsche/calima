@@ -24,8 +24,9 @@ import { friendlyError } from "@/lib/errors";
 import { fromEdit } from "@/lib/develop/settings";
 import { withExif, withXmp } from "@/lib/exif-write";
 import { hasCamera, OPEN_CAMERA } from "@/lib/camera";
-import { dayOf, daysAgo, dayStack, isDayStack } from "@/lib/day-stack";
-import { undevelopedStacks } from "@/lib/film";
+import { dayOf, daysAgo, dayStack } from "@/lib/day-stack";
+import { envelopeLabel, isEnvelope, isSortPile, toEnvelope } from "@/lib/envelope";
+import { undevelopedStacks, type Film } from "@/lib/film";
 import { newBook, uploadPrints } from "@/lib/shelve";
 import { useQueryParam } from "@/lib/use-query";
 import { calimaXmp } from "@/lib/xmp";
@@ -35,7 +36,7 @@ import { safeFileName, saveFile, saveFilesInApp, type ShareResult } from "@/lib/
 import { zipFiles } from "@/lib/zip";
 import { SIZES, STUDIO_LONG } from "@/lib/ingest";
 import { autoPhotos, loadBook, newId, numberWord, saveBook, type StoredBook, type StoredPhoto } from "@/lib/store";
-import { listPrints, MAX_STACK, piles, putPrints, removePrint, toDayStack, trimPiles, workOf, type Print } from "@/lib/studio-store";
+import { listPrints, MAX_STACK, piles, putPrints, removePrint, trimPiles, workOf, type Print } from "@/lib/studio-store";
 import { de, getLang, locale, t, useT } from "@/lib/i18n";
 import { SHUTTER } from "@/lib/shutter";
 import { saveToLibrary } from "@/lib/library-save";
@@ -121,7 +122,7 @@ export function Studio({ user, books }: { user: User; books: StoredBook[] | null
   const lit = useMemo(() => prints.filter((p) => !p.stack || !dark.has(p.stack)), [prints, dark]);
   const stacks = piles(lit);
   // auf dem Pult liegt, was noch einsortiert wird oder ins Buch soll; Weggelegtes liegt eine Woche darunter
-  const shown = stacks.map((pile) => (isDayStack(pile[0].stack) ? pile.filter((p) => p.pick !== "out") : pile)).filter((pile) => pile.length);
+  const shown = stacks.map((pile) => (isSortPile(pile[0].stack) ? pile.filter((p) => p.pick !== "out") : pile)).filter((pile) => pile.length);
   // von Hand umsortieren: die neue Reihenfolge gilt für alle Fotos eines Stapels und bleibt auf dem Gerät
   const resort = (keys: string[]) => {
     const ranked = stacks.map((pile) => {
@@ -135,7 +136,7 @@ export function Studio({ user, books }: { user: User; books: StoredBook[] | null
   const sort = usePultSort({ keys: shown.map(pileKey), onDrop: resort });
   const desk = sort.order ? sort.order.map((k) => shown.find((pile) => pileKey(pile) === k)!).filter(Boolean) : shown;
   const onDesk = desk.flat();
-  const away = prints.filter((p) => isDayStack(p.stack) && p.pick === "out");
+  const away = prints.filter((p) => isSortPile(p.stack) && p.pick === "out");
 
   const openCamera = () => setCameraOpen(true);
   // Quick Action am App-Symbol, während das Zimmer offen ist (app-launch.tsx)
@@ -161,19 +162,29 @@ export function Studio({ user, books }: { user: User; books: StoredBook[] | null
     }
     keep([{ ...p, stack: dayStack(p.at), pos: p.at }]);
   };
-  // ein entwickelter Film (voll oder bewusst entwickelt) kommt auf den Abendstapel: abends mit dem Tag einsortieren,
-  // nicht sofort ins Buch legen müssen (Michel 9.10.2026)
-  const onFilmDone = (stack: string) => {
-    const fresh = onFilm.current.filter((p) => p.stack === stack);
-    onFilm.current = onFilm.current.filter((p) => p.stack !== stack);
-    const roll = [...prints.filter((p) => p.stack === stack && !fresh.some((q) => q.id === p.id)), ...fresh].map(toDayStack);
+  // ein entwickelter Film (voll oder bewusst entwickelt) kommt als Umschlag vorn auf den Pult (#244): alle Bilder auf
+  // einmal ansehen und einsortieren, wie vom Labor, statt sie über die Tage der Aufnahmen verstreut zu suchen.
+  // „Alle entwickeln“ (#245) bringt mehrere Filme auf einmal, jeder wird ein eigener Umschlag.
+  const onFilmDone = (films: Film[]) => {
+    const now = Date.now(); // eslint-disable-line react-hooks/purity -- läuft beim Entwickeln, nicht beim Zeichnen
+    const stacks = new Set(films.map((f) => f.stack));
+    const fresh = onFilm.current.filter((p) => stacks.has(p.stack!));
+    onFilm.current = onFilm.current.filter((p) => !stacks.has(p.stack!));
+    const envelopes = films
+      .map((f) => toEnvelope([...prints.filter((p) => p.stack === f.stack && !fresh.some((q) => q.id === p.id)), ...fresh.filter((p) => p.stack === f.stack)], f.stack, f.name, now))
+      .filter((roll) => roll.length);
     setCameraOpen(false);
     if (wantsCamera) router.replace("/zimmer");
-    if (!roll.length) return;
+    if (!envelopes.length) return;
+    const roll = envelopes.flat();
     keep(roll);
     // entwickelt: jetzt dürfen die Bilder auch in die Mediathek (#210)
     saveToLibrary(roll).catch(() => {});
-    notify(roll.length === 1 ? t("Entwickelt. Das Bild liegt auf dem Stapel seines Tages.") : t("Entwickelt. Die {n} Bilder liegen auf dem Stapel ihres Tages.", { n: roll.length }));
+    const first = envelopes[0];
+    const name = first[0].roll!;
+    const open = { action: { label: t("Ansehen"), onClick: () => setSorting(first[0].stack!) } };
+    if (envelopes.length > 1) notify(t("Entwickelt: {n} Umschläge liegen vorn auf dem Pult.", { n: envelopes.length }));
+    else notify(roll.length === 1 ? t("Entwickelt: ein Bild im Umschlag „{name}“.", { name }) : t("Entwickelt: {n} Bilder im Umschlag „{name}“.", { n: roll.length, name }), open);
   };
   // tagsüber fragt Calima nichts: die Fotos liegen schon auf dem Stapel des Tages, eingeordnet wird abends
   const closeCamera = () => {
@@ -304,7 +315,7 @@ export function Studio({ user, books }: { user: User; books: StoredBook[] | null
 
       <ul {...sort.bind} className="flex flex-wrap items-end gap-y-7 pt-2 pl-7 select-none md:pl-8 [-webkit-touch-callout:none]" aria-label={t("Abzüge")}>
         {desk.map((pile, i) =>
-          isDayStack(pile[0].stack) ? (
+          isSortPile(pile[0].stack) ? (
             <DayTile key={pile[0].stack} pile={pile} i={i} n={desk.length} onOpen={() => setSorting(pile[0].stack!)} />
           ) : pile.length > 1 ? (
             <StackTile key={pile[0].stack} pile={pile} i={i} n={desk.length} onOpen={() => setEditing(pile)} />
@@ -346,7 +357,7 @@ export function Studio({ user, books }: { user: User; books: StoredBook[] | null
       />
       {onDesk.length > 0 && (
         <p className="text-on-table-2 mt-2 text-[13px]">
-          {desk.some((pile) => isDayStack(pile[0].stack))
+          {desk.some((pile) => isSortPile(pile[0].stack))
             ? t("Ein Tag öffnet sich zum Einsortieren: nach rechts ins Buch, nach links weg. Nichts davon wird hochgeladen, bevor es im Buch liegt.")
             : t("Ein Abzug öffnet das Foto wieder, ein Stapel die ganze Serie, so wie du sie bearbeitet hast. Nichts davon wird hochgeladen.")}
         </p>
@@ -487,10 +498,10 @@ function StackTile({ pile, i, n, onOpen }: { pile: Print[]; i: number; n: number
   );
 }
 
-/** Der Stapel eines Tages: wie ein Stapel, darunter ein Zettel mit dem Tag; öffnet das Einsortieren */
+/** Der Stapel eines Tages oder Umschlag eines Films: darunter ein Zettel mit Tag bzw. Filmname und Zeitraum; öffnet das Einsortieren */
 function DayTile({ pile, i, n, onOpen }: { pile: Print[]; i: number; n: number; onOpen: () => void }) {
   const t = useT();
-  const day = dayName(pile[0].stack!);
+  const day = isEnvelope(pile[0].stack) ? envelopeLabel(pile, locale(getLang())) : dayName(pile[0].stack!);
   const open = pile.filter((p) => !p.pick).length;
   return (
     <OnTable i={i} n={n} tilt={tiltOf(pile[0].stack!)} pile={pile[0].stack} className="-ml-5 md:-ml-6">
