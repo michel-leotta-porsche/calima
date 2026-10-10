@@ -236,7 +236,9 @@ public class CalimaCameraPlugin: CAPPlugin, CAPBridgedPlugin {
     }
 
     @objc func capture(_ call: CAPPluginCall) {
-        camera.capture(flash: call.getBool("flash") ?? false) { result in
+        // flash: true = An, "auto" = Auto, fehlt = Aus (getBool auf einen String liefert nil und umgekehrt)
+        let mode: AVCaptureDevice.FlashMode = call.getString("flash") == "auto" ? .auto : (call.getBool("flash") ?? false) ? .on : .off
+        camera.capture(flash: mode) { result in
             switch result {
             case .success(let url):
                 call.resolve(["path": url.path])
@@ -904,8 +906,8 @@ final class CalimaCamera: NSObject, AVCaptureVideoDataOutputSampleBufferDelegate
 
     // MARK: Auslösen
 
-    /// flash: echter Blitz für dieses Bild (Einwegkamera), sofern das Objektiv einen kann
-    func capture(flash: Bool = false, _ done: @escaping (Result<URL, Error>) -> Void) {
+    /// flash: Blitz für dieses Bild (An, Auto oder Aus), sofern das Objektiv ihn kann
+    func capture(flash: AVCaptureDevice.FlashMode = .off, _ done: @escaping (Result<URL, Error>) -> Void) {
         queue.async {
             guard self.running else {
                 done(.failure(NSError(domain: "calima", code: 3, userInfo: [NSLocalizedDescriptionKey: "Kamera läuft nicht"])))
@@ -919,7 +921,7 @@ final class CalimaCamera: NSObject, AVCaptureVideoDataOutputSampleBufferDelegate
             // Zeit von Hand (etwa 1/6 s): .balanced verrechnet mehrere Bilder und verlängert die Aufnahme spürbar,
             // .speed nimmt genau die eingestellte Belichtung
             settings.photoQualityPrioritization = self.dials.duration != nil ? .speed : .balanced
-            if flash, self.photoOutput.supportedFlashModes.contains(.on) { settings.flashMode = .on }
+            if flash != .off, self.photoOutput.supportedFlashModes.contains(flash) { settings.flashMode = flash }
             if let c = self.photoOutput.connection(with: .video) {
                 self.rotate(c, angle: self.angle())
                 if c.isVideoMirroringSupported { c.isVideoMirrored = self.front }

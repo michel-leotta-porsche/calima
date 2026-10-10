@@ -47,8 +47,11 @@ type Plugin = {
   setMagnify(o: { on: boolean }): Promise<void>;
   /** Wasserwaage: die App meldet die Neigung als Ereignis „level“ (data.roll in Grad, 0 = gerade) */
   setLevel(o: { on: boolean }): Promise<void>;
-  /** flash: echter Blitz für dieses Bild (Einwegkamera-Vorlagen); eine App ohne Blitz-Unterstützung löst ohne aus */
-  capture(o?: { flash?: boolean }): Promise<{ path: string }>;
+  /**
+   * flash: Blitz für dieses Bild. true (Einwegkamera-Vorlagen) heißt An; "auto" lässt die Kamera entscheiden (#221).
+   * Ein Objektiv oder eine App ohne Blitz löst ohne aus.
+   */
+  capture(o?: { flash?: boolean | "auto" }): Promise<{ path: string }>;
   /** fertiges Foto (JPEG, Base64) zusätzlich in die Mediathek; denied, wenn „Fotos hinzufügen“ nicht erlaubt ist */
   saveToLibrary(o: { data: string }): Promise<{ saved: boolean; denied?: boolean }>;
   discard(o: { path: string }): Promise<void>;

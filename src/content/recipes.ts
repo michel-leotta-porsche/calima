@@ -50,6 +50,8 @@ export type CameraInfo = {
   iso?: number;
   ev?: number;
   date?: string;
+  /** Blitz hat ausgelöst (#221); fehlt, wenn die Datei es nicht sagt */
+  flash?: boolean;
 };
 
 /** Calimas eigene Einstellungen aus einer gesicherten Datei (XMP-Block calima:settings), so wie die Zwischenablage sie hält */

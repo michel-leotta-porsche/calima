@@ -5,6 +5,7 @@ import exifr from "exifr";
 import type { CameraInfo, Recipe } from "@/content/recipes";
 import { cleanSettings } from "@/lib/develop/settings";
 import { exifDate, type ExifFields } from "@/lib/exif-write";
+import { flashFired } from "@/lib/flash";
 import { readFujiRecipe } from "@/lib/fuji";
 import { findSubject } from "@/lib/subject";
 import { t } from "@/lib/i18n";
@@ -213,7 +214,7 @@ function averageColor(canvas: HTMLCanvasElement): [number, number, number] {
 /** EXIF-Zahl nur übernehmen, wenn sie wirklich eine ist (manche Programme schreiben Brüche als Paar) */
 const num = (v: unknown) => (typeof v === "number" && Number.isFinite(v) ? v : undefined);
 
-const pick = ["Make", "Model", "LensModel", "FocalLengthIn35mmFormat", "FocalLength", "FNumber", "ExposureTime", "ISO", "ExposureCompensation", "DateTimeOriginal"];
+const pick = ["Make", "Model", "LensModel", "FocalLengthIn35mmFormat", "FocalLength", "FNumber", "ExposureTime", "ISO", "ExposureCompensation", "DateTimeOriginal", "Flash"];
 
 /**
  * Messpunkt: was eine Datei an Metadaten mitbringt, um Dateiauswahl am Rechner, Datei-Feld auf dem iPhone und
@@ -274,6 +275,8 @@ export async function readMeta(file: File): Promise<PhotoMeta> {
         iso,
         ev,
         date: taken?.slice(0, 10),
+        // nur „ausgelöst“ merken: ein Blitz, der nicht kam, ist für das Rezept keine Zeile wert
+        ...(flashFired(meta.Flash) ? { flash: true } : {}),
       }
     : undefined;
 

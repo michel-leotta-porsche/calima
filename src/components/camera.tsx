@@ -1,6 +1,6 @@
 "use client";
 
-import { Box, ChevronLeft, ChevronRight, Film as FilmIcon, Lock, SlidersHorizontal, Sun, SwitchCamera, X, Zap } from "lucide-react";
+import { Box, ChevronLeft, ChevronRight, Film as FilmIcon, Lock, SlidersHorizontal, Sun, SwitchCamera, X, Zap, ZapOff } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent } from "react";
 import { createPortal } from "react-dom";
 
@@ -14,6 +14,7 @@ import { AUTO, CalimaCamera, FILM_FRAMES, focalZoom, grainOf, isDenied, LUT_N, l
 import { bakePhoto } from "@/lib/develop/bake";
 import { buildLut, neutralEdit, PRESETS, type NamedRecipe, type PhotoEdit } from "@/lib/develop/model";
 import { applySettings, type CopiedSettings } from "@/lib/develop/settings";
+import { nextFlash, readFlash, type FlashMode } from "@/lib/flash";
 import { haptic } from "@/lib/haptics";
 import { SIZES, studioSource } from "@/lib/ingest";
 import { saveToLibrary } from "@/lib/library-save";
@@ -58,6 +59,9 @@ const framesOf = (f: Film) => f.rules?.frames ?? FILM_FRAMES;
 const evLabel = (ev: number) => `${ev > 0 ? "+" : ev < 0 ? "−" : "±"}${Math.abs(ev).toFixed(1)}`;
 
 /** taken: von „So fotografieren“ geöffnet, der eben mitgenommene Look kommt vor dem zuletzt gewählten */
+/** gemerkter Blitz-Knopf (#221) */
+const FLASH_KEY = "calima:blitz";
+
 export function Camera({ uid, taken, onShot, onFilmDone, onClose }: { uid: string; taken?: boolean; onShot: (p: Print, stack?: string) => void; onFilmDone: (stack: string) => void; onClose: () => void }) {
   const t = useT();
   const recent = useRecentSettings();
@@ -74,6 +78,22 @@ export function Camera({ uid, taken, onShot, onFilmDone, onClose }: { uid: strin
   const [ready, setReady] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [front, setFront] = useState(false);
+  /** Blitz Aus, Auto, An (#221); bleibt auf dem Gerät. Einwegkameras bringen ihren eigenen mit */
+  const [flashMode, setFlashMode] = useState<FlashMode>(() => {
+    try {
+      return readFlash(localStorage.getItem(FLASH_KEY));
+    } catch {
+      return "off";
+    }
+  });
+  const cycleFlash = () => {
+    haptic("select");
+    const next = nextFlash(flashMode);
+    setFlashMode(next);
+    try {
+      localStorage.setItem(FLASH_KEY, next);
+    } catch {}
+  };
   const [zoom, setZoom] = useState(1);
   const [ev, setEv] = useState(0);
   const [showEv, setShowEv] = useState(false);
@@ -582,7 +602,9 @@ export function Camera({ uid, taken, onShot, onFilmDone, onClose }: { uid: strin
     setFlash(true);
     window.setTimeout(() => setFlash(false), 140);
     try {
-      const { path } = await CalimaCamera.capture(film?.rules?.flash ? { flash: true } : undefined);
+      // Einwegkamera: ihr Blitz gilt; sonst der Blitz-Knopf (die Frontkamera hat keinen)
+      const flashFor = fixed ? fixed.flash || undefined : front || flashMode === "off" ? undefined : flashMode === "on" || "auto";
+      const { path } = await CalimaCamera.capture(flashFor ? { flash: flashFor } : undefined);
       const file = await takeShot(path, `${t("Kamera")} ${stamp()}`);
       const s = await studioSource(file);
       const edit = lookNow.edit ?? undefined;
@@ -701,9 +723,26 @@ export function Camera({ uid, taken, onShot, onFilmDone, onClose }: { uid: strin
   return createPortal(
     <div id="calima-kamera" className="text-on-table fixed inset-0 z-[600] flex flex-col bg-transparent select-none" role="dialog" aria-label={t("Kamera")}>
       <header className="bg-table-deep flex items-center justify-between gap-2 px-3 pb-2" style={{ paddingTop: "calc(env(safe-area-inset-top, 0px) + 8px)" }}>
-        <IconButton label={t("Schließen")} variant="quiet" onClick={onClose} className="text-on-table">
-          <X aria-hidden />
-        </IconButton>
+        <span className="flex items-center gap-1">
+          <IconButton label={t("Schließen")} variant="quiet" onClick={onClose} className="text-on-table">
+            <X aria-hidden />
+          </IconButton>
+          {!fixed && !front && (
+            <IconButton
+              label={flashMode === "off" ? t("Blitz aus") : flashMode === "auto" ? t("Blitz automatisch") : t("Blitz an")}
+              variant="quiet"
+              onClick={cycleFlash}
+              className={`relative ${flashMode === "on" ? "text-cloth" : "text-on-table"}`}
+            >
+              {flashMode === "off" ? <ZapOff aria-hidden /> : <Zap aria-hidden />}
+              {flashMode === "auto" && (
+                <span aria-hidden className="absolute right-1 bottom-1 text-[11px] leading-none font-bold">
+                  A
+                </span>
+              )}
+            </IconButton>
+          )}
+        </span>
         <div className="min-w-0 text-center" aria-live="polite">
           <p className="truncate text-[15px] leading-tight font-bold tracking-[-0.01em]">{title}</p>
           <p className="text-on-table-2 truncate text-[12px] leading-tight">{sub || " "}</p>

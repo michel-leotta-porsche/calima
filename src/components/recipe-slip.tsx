@@ -312,6 +312,7 @@ const lens = (c: CameraInfo, t: Tr, lang: ReturnType<typeof useLang>) => {
     [t("Blende"), c.aperture ? `f/${c.aperture.toFixed(1)}` : undefined],
     [t("Zeit"), time],
     ["ISO", c.iso?.toString()],
+    [t("Blitz"), c.flash ? t("ausgelöst") : undefined],
     [t("Belichtung"), c.ev !== undefined ? `${c.ev > 0 ? "+" : c.ev < 0 ? "−" : "±"}${Math.abs(c.ev).toFixed(1)} EV` : undefined],
     [t("Datum"), c.date ? new Date(c.date).toLocaleDateString(locale(lang), { day: "numeric", month: "long", year: "numeric" }) : undefined],
   ].filter((r): r is [string, string] => !!r[1]);

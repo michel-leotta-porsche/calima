@@ -112,4 +112,8 @@ export const CAMERA: Record<string, string> = {
   Feldweg: "Country Lane",
   "natürlich und leicht gedämpft, mit Blitz": "natural and slightly muted, with flash",
   "Ohne Erlaubnis für die Mediathek liegen die Fotos nur in Calima. Erlauben kannst du es in den iPhone-Einstellungen unter Calima → Fotos.": "Without access to your library, the photos only live in Calima. You can allow it in the iPhone Settings under Calima → Photos.",
+  "Blitz aus": "Flash off",
+  "Blitz automatisch": "Flash auto",
+  "Blitz an": "Flash on",
+  "ausgelöst": "fired",
 };
