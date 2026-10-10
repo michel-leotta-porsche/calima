@@ -339,6 +339,10 @@ export function Camera({ uid, taken, onShot, onFilmDone, onClose }: { uid: strin
      sieht man erst, wenn der Film entwickelt ist (voll oder bewusst entwickelt) ----- */
 
   // immer vom letzten Stand aus: ein Foto ist noch unterwegs, während der Film schon beiseitegelegt sein kann
+  // das Regal auch bei der App sichern (#247): geht der WebKit-Speicher verloren, holt das Studio es von dort zurück
+  useEffect(() => {
+    CalimaCamera.keepShelf({ shelf: JSON.stringify(shelf) }).catch(() => {});
+  }, [shelf]);
   const update = (fn: (s: Shelf) => Shelf) =>
     setShelf((prev) => {
       const next = fn(prev);
@@ -582,12 +586,14 @@ export function Camera({ uid, taken, onShot, onFilmDone, onClose }: { uid: strin
     setFlash(true);
     window.setTimeout(() => setFlash(false), 140);
     try {
-      const { path } = await CalimaCamera.capture(film?.rules?.flash ? { flash: true } : undefined);
+      // auf einem Film sichert die App das Bild gleich mit, unter der Kennung des Abzugs (#247)
+      const id = newId();
+      const { path } = await CalimaCamera.capture({ ...(film?.rules?.flash ? { flash: true } : {}), ...(film ? { keep: { stack: film.stack, id } } : {}) });
       const file = await takeShot(path, `${t("Kamera")} ${stamp()}`);
       const s = await studioSource(file);
       const edit = lookNow.edit ?? undefined;
       const onFilm = film;
-      const print: Print = { id: newId(), name: file.name.replace(/\.jpg$/, ""), at: Date.now(), w: s.w, h: s.h, work: s.work, page: s.page, thumb: s.thumb, meta: s.meta, edit, pos: onFilm?.count };
+      const print: Print = { id, name: file.name.replace(/\.jpg$/, ""), at: Date.now(), w: s.w, h: s.h, work: s.work, page: s.page, thumb: s.thumb, meta: s.meta, edit, pos: onFilm?.count };
       onShot(print, onFilm?.stack);
       if (onFilm) {
         const next = { ...onFilm, count: onFilm.count + 1 };

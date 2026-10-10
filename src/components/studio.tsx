@@ -23,7 +23,8 @@ import { buildLut, describeEdit, isNeutral, neutralEdit, type PhotoEdit } from "
 import { friendlyError } from "@/lib/errors";
 import { fromEdit } from "@/lib/develop/settings";
 import { withExif, withXmp } from "@/lib/exif-write";
-import { hasCamera, OPEN_CAMERA } from "@/lib/camera";
+import { CalimaCamera, hasCamera, OPEN_CAMERA } from "@/lib/camera";
+import { restoreFilms } from "@/lib/film-restore";
 import { dayOf, daysAgo, dayStack, isDayStack } from "@/lib/day-stack";
 import { undevelopedStacks } from "@/lib/film";
 import { newBook, uploadPrints } from "@/lib/shelve";
@@ -38,7 +39,7 @@ import { autoPhotos, loadBook, newId, numberWord, saveBook, type StoredBook, typ
 import { listPrints, MAX_STACK, piles, putPrints, removePrint, toDayStack, trimPiles, workOf, type Print } from "@/lib/studio-store";
 import { de, getLang, locale, t, useT } from "@/lib/i18n";
 import { SHUTTER } from "@/lib/shutter";
-import { saveToLibrary } from "@/lib/library-save";
+import { libraryDenied, saveToLibrary } from "@/lib/library-save";
 
 // Fotostudio unten im Bücherzimmer (Workshop 9.10.2026, fotostudio-workshop/): ein Foto öffnen, mit dem Editor der Werkbank
 // bearbeiten, dann sichern oder in ein Buch legen. Bis dahin bleibt alles auf dem Gerät. Die letzten Fotos liegen als Abzüge
@@ -94,7 +95,9 @@ export function Studio({ user, books }: { user: User; books: StoredBook[] | null
   const camera = cameraOpen || wantsCamera;
 
   useEffect(() => {
-    listPrints(user.uid)
+    // erst die Filme aus der Sicherung der App (#247), dann lesen und aufräumen
+    (hasCamera() ? restoreFilms(user.uid).catch(() => 0) : Promise.resolve(0))
+      .then(() => listPrints(user.uid))
       .then((p) => {
         const { keep, drop } = trimPiles(piles(p));
         setPrints(keep.flat());
@@ -171,8 +174,11 @@ export function Studio({ user, books }: { user: User; books: StoredBook[] | null
     if (wantsCamera) router.replace("/zimmer");
     if (!roll.length) return;
     keep(roll);
-    // entwickelt: jetzt dürfen die Bilder auch in die Mediathek (#210)
-    saveToLibrary(roll).catch(() => {});
+    // entwickelt: jetzt dürfen die Bilder auch in die Mediathek (#210); liegen sie dort, räumt die App ihre Sicherung weg (#247)
+    saveToLibrary(roll)
+      // ohne Erlaubnis für die Mediathek bleibt die Sicherung liegen: die Bilder gibt es sonst nur im WebKit-Speicher
+      .then(() => (hasCamera() && !libraryDenied() ? CalimaCamera.dropFilm({ stack }) : undefined))
+      .catch(() => {});
     notify(roll.length === 1 ? t("Entwickelt. Das Bild liegt auf dem Stapel seines Tages.") : t("Entwickelt. Die {n} Bilder liegen auf dem Stapel ihres Tages.", { n: roll.length }));
   };
   // tagsüber fragt Calima nichts: die Fotos liegen schon auf dem Stapel des Tages, eingeordnet wird abends

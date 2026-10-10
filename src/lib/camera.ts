@@ -48,7 +48,14 @@ type Plugin = {
   /** Wasserwaage: die App meldet die Neigung als Ereignis „level“ (data.roll in Grad, 0 = gerade) */
   setLevel(o: { on: boolean }): Promise<void>;
   /** flash: echter Blitz für dieses Bild (Einwegkamera-Vorlagen); eine App ohne Blitz-Unterstützung löst ohne aus */
-  capture(o?: { flash?: boolean }): Promise<{ path: string }>;
+  /** keep (#247): Bild auf einem Film, zusätzlich als Datei der App sichern (Filme/<stack>/<id>.jpg), bevor capture antwortet */
+  capture(o?: { flash?: boolean; keep?: { stack: string; id: string } }): Promise<{ path: string }>;
+  /** das Filmregal (JSON wie localStorage „calima:films“) bei der App sichern, bei jeder Änderung */
+  keepShelf(o: { shelf: string }): Promise<void>;
+  /** was die App für Filme gesichert hat: Regal und Bilder (path bleibt liegen, bis dropFilm) */
+  savedFilms(): Promise<{ shelf?: string; shots: { stack: string; id: string; path: string; at: number }[] }>;
+  /** ein Film ist entwickelt und in der Mediathek: seine gesicherten Dateien weg */
+  dropFilm(o: { stack: string }): Promise<void>;
   /** fertiges Foto (JPEG, Base64) zusätzlich in die Mediathek; denied, wenn „Fotos hinzufügen“ nicht erlaubt ist */
   saveToLibrary(o: { data: string }): Promise<{ saved: boolean; denied?: boolean }>;
   discard(o: { path: string }): Promise<void>;
