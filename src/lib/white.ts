@@ -18,6 +18,17 @@ export const MEASURED: Light = { id: "gemessen", name: "Gemessen", en: "Custom",
 export const lightOf = (d: Dials): Light => (d.gains ? MEASURED : (LIGHTS.find((l) => l.kelvin === d.kelvin) ?? LIGHTS[0]));
 
 /**
+ * Die Gravuren auf dem Lineal und wo die Marke steht. Gemessen steht dort als eigene Gravur vor Auto, solange es gilt:
+ * dann liegt Auto gleich daneben, ein Tipp oder ein Zug nach rechts genügt (Michel 10.10.: abwählen war umständlich,
+ * weil die Marke schon auf „auto“ zu stehen schien)
+ */
+export function rulerOf(d: Dials): { stops: Light[]; at: number } {
+  const light = lightOf(d);
+  const stops = light === MEASURED ? [MEASURED, ...LIGHTS] : LIGHTS;
+  return { stops, at: stops.indexOf(light) };
+}
+
+/**
  * Was die App im Messquadrat sieht: Mittel von Rot, Grün, Blau linear (0…1), gemessen vor dem Look, dazu die
  * Weißabgleich-Gains, mit denen das Bild gerade entsteht.
  */

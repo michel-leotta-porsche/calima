@@ -5,7 +5,7 @@ import { useRef, useState, type PointerEvent as ReactPointerEvent, type ReactNod
 import { type Dials, type Meter } from "@/lib/camera";
 import { haptic } from "@/lib/haptics";
 import { useLang, useT } from "@/lib/i18n";
-import { LIGHTS, lightOf, MEASURED, type Light } from "@/lib/white";
+import { lightOf, MEASURED, rulerOf, type Light } from "@/lib/white";
 
 // Weiß wie an einer Fujifilm, in drei Ebenen (Entwurf „Gravur“, weissabgleich-workshop 9.10.):
 // 1. das Licht: A, Kunstlicht, Neon, Sonne, Wolken, Schatten, als Gravuren auf einem Lineal, das unter der Marke einrastet.
@@ -96,15 +96,15 @@ export function WhiteDial({
   const nameOf = useLightName();
   const [fine, setFine] = useState(false);
   const light = lightOf(dials);
-  // gemessenes Weiß steht nicht auf dem Lineal: die Marke wartet bei Auto
-  const at = Math.max(0, LIGHTS.indexOf(light));
+  // gemessenes Weiß steht als eigene Gravur vor Auto, solange es gilt
+  const { stops, at } = rulerOf(dials);
   const drag = useRef<{ id: number; x: number; start: number; moved: boolean } | null>(null);
   const [dx, setDx] = useState(0);
   const [dragging, setDragging] = useState(false);
 
   const choose = (i: number) => {
-    const l = LIGHTS[Math.max(0, Math.min(LIGHTS.length - 1, i))];
-    if (l === light) return;
+    const l = stops[Math.max(0, Math.min(stops.length - 1, i))];
+    if (l === light || l === MEASURED) return;
     haptic("select");
     onDials({ ...dials, kelvin: l.kelvin, tint: l.kelvin == null ? null : l.tint, gains: null });
   };
@@ -122,7 +122,7 @@ export function WhiteDial({
     if (Math.abs(off) > 6) d.moved = true;
     if (!d.moved) return;
     // die Skala folgt dem Finger, zwischen zwei Gravuren mit Widerstand
-    const i = Math.max(0, Math.min(LIGHTS.length - 1, d.start - Math.round(off / STEP)));
+    const i = Math.max(0, Math.min(stops.length - 1, d.start - Math.round(off / STEP)));
     setDx(Math.max(-STEP / 2, Math.min(STEP / 2, off - (d.start - i) * STEP)) * 0.5);
     choose(i);
   };
@@ -164,17 +164,17 @@ export function WhiteDial({
           style={{ transform: `translateX(${-at * STEP + dx}px)` }}
           aria-hidden
         >
-          <span className="bg-on-table-2/60 absolute top-[44px] h-px" style={{ left: -STEP * 3, width: STEP * (LIGHTS.length + 5) }} />
-          {Array.from({ length: (LIGHTS.length + 5) * 4 }, (_, i) => -12 + i).map((i) =>
+          <span className="bg-on-table-2/60 absolute top-[44px] h-px" style={{ left: -STEP * 3, width: STEP * (stops.length + 5) }} />
+          {Array.from({ length: (stops.length + 5) * 4 }, (_, i) => -12 + i).map((i) =>
             i % 4 ? <span key={i} className="bg-on-table-2/50 absolute top-[40px] h-1 w-px" style={{ left: (i * STEP) / 4 }} /> : null,
           )}
-          {LIGHTS.map((l, i) => {
-            const on = i === at && light !== MEASURED;
+          {stops.map((l, i) => {
+            const on = i === at;
             return (
             <span key={l.id} className={`absolute top-0 flex -translate-x-1/2 flex-col items-center ${on ? "text-on-table" : "text-on-table-2/80"}`} style={{ left: i * STEP }}>
               <LightIcon icon={l.icon} size={22} className="mt-1.5" />
               <span className={`mt-[9px] h-2.5 w-px ${on ? "bg-on-table" : "bg-on-table-2"}`} />
-              <span className={`mt-0.5 text-[11px] tracking-[.04em] tabular-nums ${on ? "font-semibold" : ""}`}>{l.kelvin ?? "auto"}</span>
+              <span className={`mt-0.5 text-[11px] tracking-[.04em] tabular-nums ${on ? "font-semibold" : ""}`}>{l === MEASURED ? t("gemessen") : (l.kelvin ?? "auto")}</span>
             </span>
             );
           })}

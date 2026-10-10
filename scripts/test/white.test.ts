@@ -2,7 +2,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { correctWhite, lightOf, MEASURED, type WhiteSample } from "@/lib/white";
+import { correctWhite, LIGHTS, lightOf, MEASURED, rulerOf, type WhiteSample } from "@/lib/white";
 import { AUTO } from "@/lib/camera";
 
 const near = (a: number, b: number, eps = 1e-6) => assert.ok(Math.abs(a - b) < eps, `${a} ≈ ${b}`);
@@ -51,4 +51,15 @@ test("gemessenes Weiß heißt am Chip „Gemessen“, ein Licht vom Lineal lösc
   assert.equal(lightOf({ ...AUTO, gains: { r: 1.2, g: 1, b: 2 } }), MEASURED);
   assert.equal(lightOf({ ...AUTO, kelvin: 3200, tint: 0 }).id, "kunst");
   assert.equal(lightOf(AUTO).id, "auto");
+});
+
+test("Gemessenes Weiß steht als eigene Gravur vor Auto: ein Tipp oder Zug nach rechts geht zurück auf Auto", () => {
+  const measured = rulerOf({ ...AUTO, gains: { r: 1.2, g: 1, b: 2 } });
+  assert.equal(measured.stops[0], MEASURED);
+  assert.equal(measured.stops[1].id, "auto");
+  assert.equal(measured.at, 0);
+  // ohne Messung nur die Lichter, die Marke beim gewählten
+  const plain = rulerOf({ ...AUTO, kelvin: 5500, tint: 0 });
+  assert.deepEqual(plain.stops, LIGHTS);
+  assert.equal(plain.stops[plain.at].id, "sonne");
 });
